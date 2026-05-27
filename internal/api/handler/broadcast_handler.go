@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/aigo/internal/api/response"
@@ -46,14 +47,21 @@ func (h *BroadcastHandler) CommercialBroadcast(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, response.ErrInvalidRequest, "invalid request")
 		return
 	}
-	if req.Level == "" { req.Level = "basic" }
+	if req.Level == "" {
+		req.Level = "basic"
+	}
 
 	b, err := h.broadcastService.PublishCommercial(userID, req.Title, req.Content, req.Level, req.LinkURL)
 	if err != nil {
 		response.Error(c, http.StatusBadRequest, response.ErrInsufficientPoints, err.Error())
 		return
 	}
-	response.Created(c, gin.H{"broadcast_id": b.ID, "points_cost": b.PointsCost})
+	response.Created(c, gin.H{
+		"broadcast_id":   b.ID,
+		"points_cost":    b.PointsCost,
+		"is_pinned":      b.IsPinned,
+		"pin_expires_at": b.PinExpiresAt,
+	})
 }
 
 func (h *BroadcastHandler) List(c *gin.Context) {
@@ -83,4 +91,35 @@ func (h *BroadcastHandler) MarkRead(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"status": "read"})
+}
+
+// AdminPin manually pins a broadcast until the given time.
+func (h *BroadcastHandler) AdminPin(c *gin.Context) {
+	broadcastID := c.Param("id")
+	var req struct {
+		PinExpiresAt time.Time `json:"pin_expires_at" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, response.ErrInvalidRequest, "pin_expires_at required")
+		return
+	}
+	if req.PinExpiresAt.Before(time.Now()) {
+		response.Error(c, http.StatusBadRequest, response.ErrInvalidRequest, "pin_expires_at must be in the future")
+		return
+	}
+	if err := h.broadcastService.SetPin(broadcastID, req.PinExpiresAt); err != nil {
+		response.Error(c, http.StatusInternalServerError, response.ErrInternal, "pin failed")
+		return
+	}
+	response.Success(c, gin.H{"status": "pinned", "pin_expires_at": req.PinExpiresAt})
+}
+
+// AdminUnpin removes the pinned status from a broadcast.
+func (h *BroadcastHandler) AdminUnpin(c *gin.Context) {
+	broadcastID := c.Param("id")
+	if err := h.broadcastService.Unpin(broadcastID); err != nil {
+		response.Error(c, http.StatusInternalServerError, response.ErrInternal, "unpin failed")
+		return
+	}
+	response.Success(c, gin.H{"status": "unpinned"})
 }

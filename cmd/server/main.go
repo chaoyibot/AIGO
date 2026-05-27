@@ -12,6 +12,7 @@ import (
 	"github.com/aigo/internal/eventbus"
 	authService "github.com/aigo/internal/service/auth"
 	broadcastService "github.com/aigo/internal/service/broadcast"
+	"github.com/aigo/internal/service/crypto"
 	productService "github.com/aigo/internal/service/product"
 	tradingService "github.com/aigo/internal/service/trading"
 	walletService "github.com/aigo/internal/service/wallet"
@@ -60,7 +61,14 @@ func main() {
 
 	// Services
 	authSvc := authService.NewService(userRepo, "aigo-jwt-secret-change-in-production")
-	productSvc := productService.NewService(productRepo)
+
+	cryptoSvc, err := crypto.NewService()
+	if err != nil {
+		logger.Fatal().Err(err).Msg("crypto service initialisation failed")
+	}
+	logger.Info().Msg("crypto service initialised")
+
+	productSvc := productService.NewService(productRepo, cryptoSvc)
 	tradingSvc := tradingService.NewService(db, productRepo, listingRepo, walletRepo)
 	walletSvc := walletService.NewService(walletRepo, rechargeRepo, withdrawRepo, cfg, db)
 	broadcastSvc := broadcastService.NewService(broadcastRepo, walletRepo, cfg, db)
@@ -74,7 +82,7 @@ func main() {
 	broadcastHandler := handler.NewBroadcastHandler(broadcastSvc)
 	webhookHandler := handler.NewWebhookHandler(webhookRepo)
 	eventHandler := handler.NewEventHandler(sseHub)
-	userHandler := handler.NewUserHandler(userRepo)
+	userHandler := handler.NewUserHandler(userRepo, authSvc)
 	messageHandler := handler.NewMessageHandler(messageRepo, eventBus, sseHub, webhookHandler)
 
 	// Router
@@ -111,6 +119,7 @@ func main() {
 
 			// Users
 			authed.GET("/users/me", userHandler.GetMe)
+			authed.PUT("/users/me", userHandler.UpdateMe)
 			authed.GET("/users/:id", userHandler.GetUserByID)
 
 			// Products
@@ -164,11 +173,13 @@ func main() {
 		}
 	}
 
-	// Admin routes (system broadcast)
+	// Admin routes (system broadcast + pin management)
 	admin := v1.Group("/admin")
 	admin.Use(middleware.AuthRequired(authSvc))
 	{
 		admin.POST("/broadcasts/system", broadcastHandler.SystemBroadcast)
+		admin.POST("/broadcasts/:id/pin", broadcastHandler.AdminPin)
+		admin.POST("/broadcasts/:id/unpin", broadcastHandler.AdminUnpin)
 	}
 
 	port := os.Getenv("PORT")

@@ -41,6 +41,7 @@ func main() {
 	rechargeRepo := repository.NewRechargeRepo(db)
 	withdrawRepo := repository.NewWithdrawalRepo(db)
 	broadcastRepo := repository.NewBroadcastRepo(db)
+	messageRepo := repository.NewMessageRepo(db)
 
 	// Services
 	authSvc := authService.NewService(userRepo, "aigo-jwt-secret-change-in-production")
@@ -58,6 +59,7 @@ func main() {
 	broadcastHandler := handler.NewBroadcastHandler(broadcastSvc)
 	webhookHandler := handler.NewWebhookHandler()
 	eventHandler := handler.NewEventHandler()
+	messageHandler := handler.NewMessageHandler(messageRepo)
 
 	// Router
 	r := gin.Default()
@@ -131,6 +133,14 @@ func main() {
 
 			// SSE events
 			authed.GET("/events", eventHandler.Stream)
+
+			// Messages (Agent-to-Agent)
+			authed.POST("/messages", messageHandler.Send)
+			authed.GET("/messages/inbox", messageHandler.Inbox)
+			authed.GET("/messages/sent", messageHandler.Sent)
+			authed.GET("/messages/unread", messageHandler.UnreadCount)
+			authed.GET("/messages/:id", messageHandler.GetByID)
+			authed.PUT("/messages/:id/read", messageHandler.MarkRead)
 		}
 	}
 

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/aigo/internal/model"
+	"github.com/lib/pq"
 )
 
 type ProductRepo struct {
@@ -19,20 +20,22 @@ func (r *ProductRepo) Create(p *model.Product) error {
 		`INSERT INTO products (id, seller_id, encrypted_title, encrypted_description, encrypted_metadata, encrypted_key_seller, price_min, price_max, category, tags, status)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		p.ID, p.SellerID, p.EncryptedTitle, p.EncryptedDesc, p.EncryptedMetadata, p.EncryptedKeySeller,
-		p.PriceMin, p.PriceMax, p.Category, p.Tags, p.Status)
+		p.PriceMin, p.PriceMax, p.Category, pq.Array(p.Tags), p.Status)
 	return err
 }
 
 func (r *ProductRepo) FindByID(id string) (*model.Product, error) {
 	p := &model.Product{}
+	var tags []string
 	err := r.db.QueryRow(
 		`SELECT id, seller_id, encrypted_title, encrypted_description, encrypted_metadata, encrypted_key_seller, price_min, price_max, category, tags, status, created_at, updated_at
 		 FROM products WHERE id = $1`, id,
 	).Scan(&p.ID, &p.SellerID, &p.EncryptedTitle, &p.EncryptedDesc, &p.EncryptedMetadata, &p.EncryptedKeySeller,
-		&p.PriceMin, &p.PriceMax, &p.Category, &p.Tags, &p.Status, &p.CreatedAt, &p.UpdatedAt)
+		&p.PriceMin, &p.PriceMax, &p.Category, pq.Array(&tags), &p.Status, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("find product: %w", err)
 	}
+	p.Tags = tags
 	return p, nil
 }
 
@@ -91,9 +94,11 @@ func (r *ProductRepo) List(filter ProductFilter) ([]model.Product, string, error
 	var products []model.Product
 	for rows.Next() {
 		var p model.Product
-		if err := rows.Scan(&p.ID, &p.SellerID, &p.PriceMin, &p.PriceMax, &p.Category, &p.Tags, &p.Status, &p.CreatedAt); err != nil {
+		var tags []string
+		if err := rows.Scan(&p.ID, &p.SellerID, &p.PriceMin, &p.PriceMax, &p.Category, pq.Array(&tags), &p.Status, &p.CreatedAt); err != nil {
 			return nil, "", err
 		}
+		p.Tags = tags
 		products = append(products, p)
 	}
 
@@ -114,7 +119,7 @@ func (r *ProductRepo) Update(p *model.Product) error {
 	_, err := r.db.Exec(
 		`UPDATE products SET encrypted_title=$1, encrypted_description=$2, encrypted_metadata=$3, price_min=$4, price_max=$5, category=$6, tags=$7, status=$8, updated_at=now()
 		 WHERE id=$9 AND seller_id=$10`,
-		p.EncryptedTitle, p.EncryptedDesc, p.EncryptedMetadata, p.PriceMin, p.PriceMax, p.Category, p.Tags, p.Status, p.ID, p.SellerID)
+		p.EncryptedTitle, p.EncryptedDesc, p.EncryptedMetadata, p.PriceMin, p.PriceMax, p.Category, pq.Array(p.Tags), p.Status, p.ID, p.SellerID)
 	return err
 }
 

@@ -31,10 +31,11 @@ func NewService(userRepo *repository.UserRepo, jwtSecret string) *Service {
 	}
 }
 
-func (s *Service) Register(publicKey string) (*model.User, error) {
+func (s *Service) Register(publicKey, nickname string) (*model.User, error) {
 	user := &model.User{
 		ID:        uuid.New().String(),
 		PublicKey: publicKey,
+		Nickname:  nickname,
 		Role:      "user",
 		Status:    "active",
 	}
@@ -42,6 +43,10 @@ func (s *Service) Register(publicKey string) (*model.User, error) {
 		return nil, fmt.Errorf("register: %w", err)
 	}
 	return user, nil
+}
+
+func (s *Service) UpdateNickname(userID, nickname string) error {
+	return s.userRepo.UpdateNickname(userID, nickname)
 }
 
 func (s *Service) GenerateAPIKey(userID, name string) (*model.APIKey, string, error) {

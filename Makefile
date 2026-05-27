@@ -38,6 +38,17 @@ clean:
 	docker compose -f deploy/docker-compose.yml down -v
 	rm -rf bin/
 
+# Rebuild the AIGO binary inside the Docker image
+docker-build:
+	docker build -f deploy/Dockerfile -t aigo:latest .
+
+# Run AIGO with the crypto key (fill in the hex key below before running)
+docker-run:
+	docker run --rm -p 8080:8080 --network aigo_default \
+		-e DATABASE_URL=postgres://aigo:***@postgres:5432/aigo?sslmode=disable \
+		-e SYSTEM_CRYPTO_KEY=c03c2fc76363d5296d1f404b41acc3c180c4b45dc62c112c31ea2e5eb5b72eb0 \
+		aigo:latest
+
 migrate-up:
 	$(GO_RUN) run /app/cmd/migrate
 

@@ -19,13 +19,14 @@ func NewAuthHandler(authService *authService.Service) *AuthHandler {
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req struct {
 		PublicKey string `json:"public_key" binding:"required"`
+		Nickname  string `json:"nickname"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, http.StatusBadRequest, response.ErrInvalidRequest, "public_key is required")
 		return
 	}
 
-	user, err := h.authService.Register(req.PublicKey)
+	user, err := h.authService.Register(req.PublicKey, req.Nickname)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, response.ErrInternal, "registration failed")
 		return

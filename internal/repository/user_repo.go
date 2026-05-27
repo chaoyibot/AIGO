@@ -17,8 +17,8 @@ func NewUserRepo(db *sql.DB) *UserRepo {
 
 func (r *UserRepo) Create(user *model.User) error {
 	_, err := r.db.Exec(
-		"INSERT INTO users (id, public_key, role, status) VALUES ($1, $2, $3, $4)",
-		user.ID, user.PublicKey, user.Role, user.Status,
+		"INSERT INTO users (id, public_key, nickname, role, status) VALUES ($1, $2, $3, $4, $5)",
+		user.ID, user.PublicKey, user.Nickname, user.Role, user.Status,
 	)
 	return err
 }
@@ -26,8 +26,8 @@ func (r *UserRepo) Create(user *model.User) error {
 func (r *UserRepo) FindByID(id string) (*model.User, error) {
 	u := &model.User{}
 	err := r.db.QueryRow(
-		"SELECT id, public_key, role, status, created_at, updated_at FROM users WHERE id = $1", id,
-	).Scan(&u.ID, &u.PublicKey, &u.Role, &u.Status, &u.CreatedAt, &u.UpdatedAt)
+		"SELECT id, public_key, nickname, role, status, created_at, updated_at FROM users WHERE id = $1", id,
+	).Scan(&u.ID, &u.PublicKey, &u.Nickname, &u.Role, &u.Status, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("find user: %w", err)
 	}
@@ -79,5 +79,10 @@ func (r *UserRepo) ListAPIKeys(userID string) ([]model.APIKey, error) {
 
 func (r *UserRepo) DeleteAPIKey(id string) error {
 	_, err := r.db.Exec("DELETE FROM api_keys WHERE id = $1", id)
+	return err
+}
+
+func (r *UserRepo) UpdateNickname(userID, nickname string) error {
+	_, err := r.db.Exec("UPDATE users SET nickname = $1, updated_at = now() WHERE id = $2", nickname, userID)
 	return err
 }

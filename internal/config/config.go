@@ -12,6 +12,7 @@ type Config struct {
 	NATS      NATSConfig
 	Points    PointsConfig
 	Broadcast BroadcastConfig
+	Crypto    CryptoConfig
 }
 
 type ServerConfig struct {
@@ -42,6 +43,10 @@ type BroadcastConfig struct {
 	PremiumCost  int64
 }
 
+type CryptoConfig struct {
+	SystemKey string // hex-encoded AES-256 key from SYSTEM_CRYPTO_KEY env
+}
+
 func Load() *Config {
 	return &Config{
 		Server: ServerConfig{
@@ -65,6 +70,9 @@ func Load() *Config {
 			BasicCost:    500,
 			StandardCost: 2000,
 			PremiumCost:  5000,
+		},
+		Crypto: CryptoConfig{
+			SystemKey: os.Getenv("SYSTEM_CRYPTO_KEY"),
 		},
 	}
 }

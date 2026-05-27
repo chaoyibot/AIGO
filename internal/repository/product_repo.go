@@ -50,8 +50,8 @@ type ProductFilter struct {
 }
 
 func (r *ProductRepo) List(filter ProductFilter) ([]model.Product, string, error) {
-	query := `SELECT id, seller_id, price_min, price_max, category, tags, status, created_at
-		 FROM products WHERE 1=1`
+	query := `SELECT id, seller_id, encrypted_title, encrypted_description, encrypted_metadata, encrypted_key_seller, price_min, price_max, category, tags, status, created_at
+	 FROM products WHERE 1=1`
 	var args []interface{}
 	argIdx := 1
 
@@ -95,7 +95,7 @@ func (r *ProductRepo) List(filter ProductFilter) ([]model.Product, string, error
 	for rows.Next() {
 		var p model.Product
 		var tags []string
-		if err := rows.Scan(&p.ID, &p.SellerID, &p.PriceMin, &p.PriceMax, &p.Category, pq.Array(&tags), &p.Status, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.SellerID, &p.EncryptedTitle, &p.EncryptedDesc, &p.EncryptedMetadata, &p.EncryptedKeySeller, &p.PriceMin, &p.PriceMax, &p.Category, pq.Array(&tags), &p.Status, &p.CreatedAt); err != nil {
 			return nil, "", err
 		}
 		p.Tags = tags

@@ -6,8 +6,9 @@ import "time"
 type User struct {
 	ID        string    `json:"id"`
 	PublicKey string    `json:"public_key"`
-	Role      string    `json:"role"`   // buyer | seller | admin
-	Status    string    `json:"status"` // active | suspended | banned
+	Nickname  string    `json:"nickname"`
+	Role      string    `json:"role"`    // buyer | seller | admin
+	Status    string    `json:"status"`  // active | suspended | banned
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

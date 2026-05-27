@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"os"
 	"time"
 
@@ -17,8 +16,6 @@ import (
 	walletService "github.com/aigo/internal/service/wallet"
 	"github.com/aigo/internal/repository"
 	"github.com/rs/zerolog"
-	// Eventbus not needed for now, uncomment when NATS is available
-	// "github.com/aigo/internal/eventbus"
 )
 
 func main() {

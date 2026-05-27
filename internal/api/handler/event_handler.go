@@ -1,10 +1,8 @@
 package handler
 
 import (
-	"io"
-
 	"github.com/gin-gonic/gin"
-	"github.com/aigo/internal/api/response"
+	"io"
 )
 
 type EventHandler struct{}

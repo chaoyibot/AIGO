@@ -31,7 +31,29 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	response.Created(c, gin.H{"user_id": user.ID})
+	// Auto-generate first API key so user can get JWT immediately
+	_, rawKey, err := h.authService.GenerateAPIKey(user.ID, "default")
+	if err != nil {
+		// Registration succeeded but key generation failed - still return user
+		response.Created(c, gin.H{"user_id": user.ID})
+		return
+	}
+
+	// Also auto-exchange for JWT token
+	token, _, err := h.authService.ExchangeToken(rawKey)
+	if err != nil {
+		response.Created(c, gin.H{
+			"user_id": user.ID,
+			"api_key": rawKey,
+		})
+		return
+	}
+
+	response.Created(c, gin.H{
+		"user_id": user.ID,
+		"api_key": rawKey,
+		"token":   token,
+	})
 }
 
 func (h *AuthHandler) GenerateAPIKey(c *gin.Context) {

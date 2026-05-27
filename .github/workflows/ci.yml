@@ -1,12 +1,15 @@
 name: CI Build & Test
+
 on:
   push:
     branches: [master, main]
   pull_request:
     branches: [master, main]
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     services:
       postgres:
         image: postgres:16-alpine
@@ -20,19 +23,33 @@ jobs:
           --health-cmd pg_isready -U aigo
           --health-interval 3s
           --health-timeout 3s
-          --health-retries 5          
+          --health-retries 5
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.22'
           cache: true
-      - run: go mod download
-      - run: go run ./cmd/migrate
+
+      - name: Download Dependencies
+        run: go mod download
+
+      - name: Run Database Migration
+        run: go run ./cmd/migrate
         env:
-          DATABASE_URL: postgres://aigo:aigo@localhost:5432/aigo?sslmode=disable
-      - run: go build -o bin/aigo ./cmd/server
-      - run: go vet ./...
-      - run: go test ./... -v -count=1
+          DATABASE_URL: postgres://aigo:***@localhost:5432/aigo?sslmode=disable
+
+      - name: Build
+        run: go build -o bin/aigo ./cmd/server
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -v -count=1
         env:
-          DATABASE_URL: postgres://aigo:aigo@localhost:5432/aigo?sslmode=disable
+          DATABASE_URL: postgres://aigo:***@localhost:5432/aigo?sslmode=disable

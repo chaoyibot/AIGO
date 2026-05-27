@@ -153,9 +153,23 @@ func main() {
 }
 
 func generateRequestID() string {
-	b := make([]byte, 8)
+	b := make([]byte, 16)
 	for i := 0; i < 8; i++ {
-		b[i] = byte(time.Now().Nanosecond()%255 + 1)
+		n := time.Now().Nanosecond() % 36
+		if n < 10 {
+			b[i] = byte('0' + n)
+		} else {
+			b[i] = byte('a' + n - 10)
+		}
+	}
+	b[8] = '-'
+	for i := 9; i < 16; i++ {
+		n := time.Now().UnixMilli() % 36
+		if n < 10 {
+			b[i] = byte('0' + n)
+		} else {
+			b[i] = byte('a' + n - 10)
+		}
 	}
 	return "req_" + string(b)
 }

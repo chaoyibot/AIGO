@@ -1,0 +1,37 @@
+GO_IMAGE = golang:1.22-alpine
+GO_RUN = docker run --rm -v "$(PWD):/app" -w /app $(GO_IMAGE) go
+DB_URL = postgres://aigo:aigo@host.docker.internal:5432/aigo?sslmode=disable
+
+.PHONY: build run test lint dev-db dev down clean migrate-up deps
+
+build:
+	$(GO_RUN) build -o /app/bin/aigo /app/cmd/server
+
+run:
+	$(GO_RUN) run /app/cmd/server
+
+test:
+	$(GO_RUN) test ./... -v -count=1
+
+lint:
+	docker run --rm -v "$(PWD):/app" -w /app golangci/golangci-lint:v1.60 golangci-lint run ./...
+
+# Start dev dependencies
+dev-db:
+	docker run -d --name aigo-postgres -e POSTGRES_USER=aigo -e POSTGRES_PASSWORD=aigo -e POSTGRES_DB=aigo -p 5432:5432 postgres:16-alpine
+
+dev:
+	docker compose -f deploy/docker-compose.yml up -d
+
+down:
+	docker compose -f deploy/docker-compose.yml down
+
+clean:
+	docker compose -f deploy/docker-compose.yml down -v
+	rm -rf bin/
+
+migrate-up:
+	$(GO_RUN) run /app/cmd/migrate
+
+deps:
+	$(GO_RUN) mod tidy

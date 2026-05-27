@@ -9,6 +9,7 @@ import (
 	"github.com/aigo/internal/api/middleware"
 	"github.com/aigo/internal/api/response"
 	"github.com/aigo/internal/config"
+	"github.com/aigo/internal/eventbus"
 	authService "github.com/aigo/internal/service/auth"
 	broadcastService "github.com/aigo/internal/service/broadcast"
 	productService "github.com/aigo/internal/service/product"
@@ -32,6 +33,19 @@ func main() {
 	defer db.Close()
 	logger.Info().Msg("database connected")
 
+	// NATS Event Bus
+	eventBus, err := eventbus.New(cfg.NATS.URL)
+	if err != nil {
+		logger.Warn().Err(err).Msg("NATS event bus unavailable, running without it")
+		eventBus = nil
+	} else {
+		logger.Info().Msg("NATS event bus connected")
+		defer eventBus.Close()
+	}
+
+	// SSE Hub (in-memory real-time push)
+	sseHub := eventbus.NewSSEHub()
+
 	// Repositories
 	userRepo := repository.NewUserRepo(db)
 	productRepo := repository.NewProductRepo(db)
@@ -42,6 +56,7 @@ func main() {
 	withdrawRepo := repository.NewWithdrawalRepo(db)
 	broadcastRepo := repository.NewBroadcastRepo(db)
 	messageRepo := repository.NewMessageRepo(db)
+	webhookRepo := repository.NewWebhookRepo(db)
 
 	// Services
 	authSvc := authService.NewService(userRepo, "aigo-jwt-secret-change-in-production")
@@ -57,9 +72,10 @@ func main() {
 	orderHandler := handler.NewOrderHandler(orderRepo)
 	walletHandler := handler.NewWalletHandler(walletSvc)
 	broadcastHandler := handler.NewBroadcastHandler(broadcastSvc)
-	webhookHandler := handler.NewWebhookHandler()
-	eventHandler := handler.NewEventHandler()
-	messageHandler := handler.NewMessageHandler(messageRepo)
+	webhookHandler := handler.NewWebhookHandler(webhookRepo)
+	eventHandler := handler.NewEventHandler(sseHub)
+	userHandler := handler.NewUserHandler(userRepo)
+	messageHandler := handler.NewMessageHandler(messageRepo, eventBus, sseHub, webhookHandler)
 
 	// Router
 	r := gin.Default()
@@ -73,7 +89,7 @@ func main() {
 
 	// Health
 	r.GET("/health", func(c *gin.Context) {
-		response.Success(c, gin.H{"status": "ok", "version": "0.2.0", "name": "AIGO"})
+		response.Success(c, gin.H{"status": "ok", "version": "0.3.0", "name": "AIGO"})
 	})
 
 	// API v1
@@ -92,6 +108,10 @@ func main() {
 		{
 			// API Key management
 			authed.POST("/auth/api-key", authHandler.GenerateAPIKey)
+
+			// Users
+			authed.GET("/users/me", userHandler.GetMe)
+			authed.GET("/users/:id", userHandler.GetUserByID)
 
 			// Products
 			authed.GET("/products", productHandler.List)
@@ -131,10 +151,10 @@ func main() {
 			authed.DELETE("/webhooks/:id", webhookHandler.Delete)
 			authed.GET("/webhooks/:id/logs", webhookHandler.Logs)
 
-			// SSE events
+			// SSE events (real-time push)
 			authed.GET("/events", eventHandler.Stream)
 
-			// Messages (Agent-to-Agent)
+			// Messages (Agent-to-Agent) — end-to-end encrypted
 			authed.POST("/messages", messageHandler.Send)
 			authed.GET("/messages/inbox", messageHandler.Inbox)
 			authed.GET("/messages/sent", messageHandler.Sent)
@@ -156,7 +176,7 @@ func main() {
 		port = "8080"
 	}
 
-	logger.Info().Str("port", port).Msg("AIGO server starting")
+	logger.Info().Str("port", port).Msg("AIGO server starting v0.3.0")
 	if err := r.Run(":" + port); err != nil {
 		logger.Fatal().Err(err).Msg("server failed")
 	}

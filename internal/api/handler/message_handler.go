@@ -1,33 +1,50 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/aigo/internal/api/response"
+	"github.com/aigo/internal/eventbus"
 	"github.com/aigo/internal/model"
 	"github.com/aigo/internal/repository"
 )
 
+const (
+	eventMessageNew = "message.new"
+)
+
 type MessageHandler struct {
-	msgRepo *repository.MessageRepo
+	msgRepo     *repository.MessageRepo
+	eventBus    *eventbus.Bus
+	sseHub      *eventbus.SSEHub
+	webhookH    *WebhookHandler
 }
 
-func NewMessageHandler(msgRepo *repository.MessageRepo) *MessageHandler {
-	return &MessageHandler{msgRepo: msgRepo}
+func NewMessageHandler(msgRepo *repository.MessageRepo, eventBus *eventbus.Bus, sseHub *eventbus.SSEHub, webhookH *WebhookHandler) *MessageHandler {
+	return &MessageHandler{
+		msgRepo:  msgRepo,
+		eventBus: eventBus,
+		sseHub:   sseHub,
+		webhookH: webhookH,
+	}
 }
 
 // Send allows an authenticated user to send a private message to another user.
+// If IsEncrypted is true, Body is treated as ciphertext (RSA-OAEP encrypted with
+// the receiver's public key). The server stores it blindly and never sees plaintext.
 func (h *MessageHandler) Send(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	var req struct {
-		ReceiverID string  `json:"receiver_id" binding:"required"`
-		Subject    string  `json:"subject"`
-		Body       string  `json:"body" binding:"required"`
-		ReplyTo    *string `json:"reply_to"`
+		ReceiverID  string `json:"receiver_id" binding:"required"`
+		Subject     string `json:"subject"`
+		Body        string `json:"body" binding:"required"`
+		IsEncrypted bool   `json:"is_encrypted"`
+		ReplyTo     *string `json:"reply_to"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, http.StatusBadRequest, response.ErrInvalidRequest, "receiver_id and body are required")
@@ -35,12 +52,13 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	}
 
 	msg := &model.Message{
-		ID:         uuid.New().String(),
-		SenderID:   userID,
-		ReceiverID: req.ReceiverID,
-		Subject:    req.Subject,
-		Body:       req.Body,
-		ReplyTo:    req.ReplyTo,
+		ID:          uuid.New().String(),
+		SenderID:    userID,
+		ReceiverID:  req.ReceiverID,
+		Subject:     req.Subject,
+		Body:        req.Body,
+		IsEncrypted: req.IsEncrypted,
+		ReplyTo:     req.ReplyTo,
 	}
 
 	if err := h.msgRepo.Send(msg); err != nil {
@@ -48,9 +66,69 @@ func (h *MessageHandler) Send(c *gin.Context) {
 		return
 	}
 
+	// --- Dispatch events asynchronously ---
+
+	// 1. Publish to NATS event bus (if available)
+	if h.eventBus != nil {
+		go func() {
+			eventData := map[string]interface{}{
+				"message_id":   msg.ID,
+				"sender_id":    msg.SenderID,
+				"receiver_id":  msg.ReceiverID,
+				"subject":      msg.Subject,
+				"body_length":  len(msg.Body),
+				"is_encrypted": msg.IsEncrypted,
+				"reply_to":     msg.ReplyTo,
+			}
+			h.eventBus.Publish(eventMessageNew, eventData)
+		}()
+	}
+
+	// 2. Push to SSE hub for real-time delivery to receiver's connected clients
+	go func() {
+		h.sseHub.Publish(msg.ReceiverID, eventbus.SSEEvent{
+			Type:      eventMessageNew,
+			CreatedAt: msg.CreatedAt,
+			Data: map[string]interface{}{
+				"message_id":   msg.ID,
+				"sender_id":    msg.SenderID,
+				"subject":      msg.Subject,
+				"body":         msg.Body,
+				"is_encrypted": msg.IsEncrypted,
+				"created_at":   msg.CreatedAt,
+			},
+		})
+	}()
+
+	// 3. Fire webhooks for receiver
+	go func() {
+		webhookPayload := map[string]interface{}{
+			"message_id":   msg.ID,
+			"sender_id":    msg.SenderID,
+			"receiver_id":  msg.ReceiverID,
+			"subject":      msg.Subject,
+			"body":         msg.Body,
+			"is_encrypted": msg.IsEncrypted,
+			"created_at":   msg.CreatedAt,
+		}
+		if h.webhookH != nil {
+			// Notify receiver
+			h.webhookH.FireEvent(eventMessageNew, msg.ReceiverID, webhookPayload)
+			// Also notify sender (so they know the message was sent)
+			h.webhookH.FireEvent(eventMessageNew, msg.SenderID, map[string]interface{}{
+				"message_id":   msg.ID,
+				"receiver_id":  msg.ReceiverID,
+				"subject":      msg.Subject,
+				"status":       "sent",
+				"created_at":   msg.CreatedAt,
+			})
+		}
+	}()
+
 	response.Created(c, gin.H{
-		"message_id":  msg.ID,
-		"receiver_id": req.ReceiverID,
+		"message_id":   msg.ID,
+		"receiver_id":  req.ReceiverID,
+		"is_encrypted": req.IsEncrypted,
 	})
 }
 
@@ -125,3 +203,6 @@ func (h *MessageHandler) GetByID(c *gin.Context) {
 	}
 	response.Success(c, msg)
 }
+
+// Ensure json import is used
+var _ = json.Marshal

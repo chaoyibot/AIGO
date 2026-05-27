@@ -26,6 +26,14 @@ dev:
 down:
 	docker compose -f deploy/docker-compose.yml down
 
+docker-build:
+	docker build -f deploy/Dockerfile -t aigo:latest .
+
+docker-run:
+	docker run --rm -p 8080:8080 --network aigo_default \
+		-e DATABASE_URL=postgres://aigo:aigo@postgres:5432/aigo?sslmode=disable \
+		aigo:latest
+
 clean:
 	docker compose -f deploy/docker-compose.yml down -v
 	rm -rf bin/

@@ -27,12 +27,12 @@ func (h *BroadcastHandler) SystemBroadcast(c *gin.Context) {
 		return
 	}
 
-	b, err := h.broadcastService.PublishSystem(req.Title, req.Content)
+b, err := h.broadcastService.PublishSystem(req.Title, req.Content)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, response.ErrInternal, "publish failed")
 		return
 	}
-	response.Created(c, gin.H{"broadcast_id": b.ID})
+	response.Created(c, gin.H{"id": b.ID})
 }
 
 func (h *BroadcastHandler) CommercialBroadcast(c *gin.Context) {

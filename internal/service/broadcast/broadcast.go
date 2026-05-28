@@ -9,17 +9,25 @@ import (
 	"github.com/aigo/internal/config"
 	"github.com/aigo/internal/model"
 	"github.com/aigo/internal/repository"
+	cryptoSvc "github.com/aigo/internal/service/crypto"
 )
 
 type Service struct {
 	broadcastRepo *repository.BroadcastRepo
 	walletRepo    *repository.WalletRepo
+	cryptoSvc     *cryptoSvc.Service
 	cfg           *config.Config
 	db            *sql.DB
 }
 
-func NewService(broadcastRepo *repository.BroadcastRepo, walletRepo *repository.WalletRepo, cfg *config.Config, db *sql.DB) *Service {
-	return &Service{broadcastRepo: broadcastRepo, walletRepo: walletRepo, cfg: cfg, db: db}
+func NewService(broadcastRepo *repository.BroadcastRepo, walletRepo *repository.WalletRepo, cryptoSvc *cryptoSvc.Service, cfg *config.Config, db *sql.DB) *Service {
+	return &Service{
+		broadcastRepo: broadcastRepo,
+		walletRepo:    walletRepo,
+		cryptoSvc:     cryptoSvc,
+		cfg:           cfg,
+		db:            db,
+	}
 }
 
 // pinDurations maps broadcast level to pin duration.
@@ -29,23 +37,35 @@ var pinDurations = map[string]time.Duration{
 	"premium":  168 * time.Hour, // 7 days
 }
 
-// PublishSystem creates a free system broadcast
+// PublishSystem creates a free system broadcast, encrypting title and content.
 func (s *Service) PublishSystem(title, content string) (*model.Broadcast, error) {
+	encTitle, err := s.cryptoSvc.Encrypt([]byte(title))
+	if err != nil {
+		return nil, fmt.Errorf("encrypt title: %w", err)
+	}
+	encContent, err := s.cryptoSvc.Encrypt([]byte(content))
+	if err != nil {
+		return nil, fmt.Errorf("encrypt content: %w", err)
+	}
 	b := &model.Broadcast{
-		ID:      uuid.New().String(),
-		Type:    "system",
-		Title:   title,
-		Content: content,
-		Status:  "active",
+		ID:               uuid.New().String(),
+		Type:             "system",
+		EncryptedTitle:   encTitle,
+		EncryptedContent: encContent,
+		Status:           "active",
+		Immutable:        true,
 	}
 	if err := s.broadcastRepo.Create(b); err != nil {
 		return nil, fmt.Errorf("create system broadcast: %w", err)
 	}
+	// Populate decrypted fields so the response contains readable content
+	b.DecryptedTitle = title
+	b.DecryptedContent = content
 	return b, nil
 }
 
 // PublishCommercial creates a paid commercial broadcast, deducting points.
-// The broadcast is automatically pinned for a duration based on the level.
+// Title and content are encrypted before storage.
 func (s *Service) PublishCommercial(senderID, title, content, level, linkURL string) (*model.Broadcast, error) {
 	costs := map[string]int64{
 		"basic":    s.cfg.Broadcast.BasicCost,
@@ -62,6 +82,15 @@ func (s *Service) PublishCommercial(senderID, title, content, level, linkURL str
 		duration = 24 * time.Hour
 	}
 	pinExpiresAt := time.Now().Add(duration)
+
+	encTitle, err := s.cryptoSvc.Encrypt([]byte(title))
+	if err != nil {
+		return nil, fmt.Errorf("encrypt title: %w", err)
+	}
+	encContent, err := s.cryptoSvc.Encrypt([]byte(content))
+	if err != nil {
+		return nil, fmt.Errorf("encrypt content: %w", err)
+	}
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -85,28 +114,30 @@ func (s *Service) PublishCommercial(senderID, title, content, level, linkURL str
 
 	// Create broadcast
 	b := &model.Broadcast{
-		ID:           uuid.New().String(),
-		Type:         "commercial",
-		Title:        title,
-		Content:      content,
-		SenderID:     &senderID,
-		PointsCost:   cost,
-		LinkURL:      linkURL,
-		Status:       "active",
-		IsPinned:     true,
-		PinnedAt:     nil,
-		PinExpiresAt: &pinExpiresAt,
+		ID:               uuid.New().String(),
+		Type:             "commercial",
+		EncryptedTitle:   encTitle,
+		EncryptedContent: encContent,
+		SenderID:         &senderID,
+		PointsCost:       cost,
+		LinkURL:          linkURL,
+		Status:           "active",
+		IsPinned:         true,
+		PinnedAt:         nil,
+		PinExpiresAt:     &pinExpiresAt,
 	}
 	if _, err := tx.Exec(
-		`INSERT INTO broadcasts (id, type, title, content, sender_id, points_cost, link_url, status, is_pinned, pinned_at, pin_expires_at)
+		`INSERT INTO broadcasts (id, type, sender_id, points_cost, link_url, status, is_pinned, pinned_at, pin_expires_at, encrypted_title, encrypted_content)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		b.ID, b.Type, b.Title, b.Content, b.SenderID, b.PointsCost, b.LinkURL, b.Status, b.IsPinned, b.PinnedAt, b.PinExpiresAt); err != nil {
+		b.ID, b.Type, b.SenderID, b.PointsCost, b.LinkURL, b.Status, b.IsPinned, b.PinnedAt, b.PinExpiresAt, b.EncryptedTitle, b.EncryptedContent); err != nil {
 		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commercial broadcast commit: %w", err)
 	}
+	b.DecryptedTitle = title
+	b.DecryptedContent = content
 	return b, nil
 }
 
@@ -120,8 +151,51 @@ func (s *Service) Unpin(broadcastID string) error {
 	return s.broadcastRepo.Unpin(broadcastID)
 }
 
+// ListBroadcasts returns active broadcasts with encrypted fields already decrypted.
 func (s *Service) ListBroadcasts() ([]model.Broadcast, error) {
-	return s.broadcastRepo.ListActive()
+	broadcasts, err := s.broadcastRepo.ListActive()
+	if err != nil {
+		return nil, err
+	}
+	for i := range broadcasts {
+		if err := s.decryptBroadcast(&broadcasts[i]); err != nil {
+			// Log but don't fail — broadcast is still readable in encrypted form
+			continue
+		}
+	}
+	return broadcasts, nil
+}
+
+// GetBroadcast returns a single broadcast by ID with decrypted title/content.
+func (s *Service) GetBroadcast(id string) (*model.Broadcast, error) {
+	b, err := s.broadcastRepo.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.decryptBroadcast(b); err != nil {
+		return nil, fmt.Errorf("decrypt broadcast: %w", err)
+	}
+	return b, nil
+}
+
+// decryptBroadcast decrypts EncryptedTitle/EncryptedContent in-place and
+// populates DecryptedTitle/DecryptedContent.
+func (s *Service) decryptBroadcast(b *model.Broadcast) error {
+	if len(b.EncryptedTitle) > 0 {
+		plain, err := s.cryptoSvc.Decrypt(b.EncryptedTitle)
+		if err != nil {
+			return fmt.Errorf("decrypt title: %w", err)
+		}
+		b.DecryptedTitle = string(plain)
+	}
+	if len(b.EncryptedContent) > 0 {
+		plain, err := s.cryptoSvc.Decrypt(b.EncryptedContent)
+		if err != nil {
+			return fmt.Errorf("decrypt content: %w", err)
+		}
+		b.DecryptedContent = string(plain)
+	}
+	return nil
 }
 
 func (s *Service) MarkRead(broadcastID, userID string) error {

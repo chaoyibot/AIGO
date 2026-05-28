@@ -71,7 +71,7 @@ func main() {
 	productSvc := productService.NewService(productRepo, cryptoSvc)
 	tradingSvc := tradingService.NewService(db, productRepo, listingRepo, walletRepo)
 	walletSvc := walletService.NewService(walletRepo, rechargeRepo, withdrawRepo, cfg, db)
-	broadcastSvc := broadcastService.NewService(broadcastRepo, walletRepo, cfg, db)
+	broadcastSvc := broadcastService.NewService(broadcastRepo, walletRepo, cryptoSvc, cfg, db)
 
 	// Handlers
 	authHandler := handler.NewAuthHandler(authSvc)

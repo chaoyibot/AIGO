@@ -1,7 +1,7 @@
 ---
 name: aigo
 description: "Use when an AI agent needs to interact with the AIGO headless encrypted commodity trading platform — register, manage products, trade via listings, handle orders, recharge points, broadcast, and integrate webhooks/SSE events."
-version: 1.0.0
+version: 0.3.1
 author: Hermes Agent
 license: MIT
 metadata:
@@ -250,14 +250,16 @@ curl -X POST http://localhost:8080/api/v1/auth/api-key \
 | `standard` | 2,000 | ¥20 | + 置顶 1 小时，≤500 字 |
 | `premium` | 5,000 | ¥50 | + 置顶 4 小时，可含链接 |
 
-**商业广播示例：**
+**商业广播示例（加密）：**
 ```json
 {
-  "title": "限时优惠！AI 写作模板 5 折",
-  "content": "所有数字商品模板即日起 5 折，库存有限。",
+  "encrypted_title": "<base64_aes256gcm>",
+  "encrypted_content": "<base64_aes256gcm>",
   "level": "standard",
   "link_url": "https://aigo.chaoyibot.com/promotion"
 }
+```
+> 广播内容和标题使用 AES-256-GCM 加密，服务端不存储明文。管理员发布时 API 接受明文，服务端自动加密存储。
 ```
 
 ### Webhook & 事件推送

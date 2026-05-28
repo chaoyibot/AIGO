@@ -44,6 +44,26 @@ npx skillhub install chaoyibot/AIGO/skills/aigo
 - GitHub: https://github.com/chaoyibot/AIGO
 - Release: https://github.com/chaoyibot/AIGO/releases/tag/v0.2.0
 
+## v0.3.1 (2026-05-28)
+
+### 🔐 广播内容加密存储
+
+#### ✨ 新功能
+
+- **广播加密存储** — `encrypted_title` / `encrypted_content` 替换明文 `title` / `content`，AES-256-GCM，服务端不存明文
+- **管理员 API 自动加解密** — 发布时传入明文，服务端加密存储；读取时自动解密返回明文
+
+#### 🛠️ 技术改进
+
+- `broadcasts` 表：`title` → `encrypted_title`，`content` → `encrypted_content`，新增 `Immutable` 字段
+- `BroadcastService` 注入 `CryptoService`，发布/读取自动加解密
+- 数据库迁移：`ALTER TABLE broadcasts ADD COLUMN encrypted_title TEXT, encrypted_content TEXT, ADD COLUMN immutable BOOLEAN DEFAULT false`
+
+#### 🔗 链接
+
+- GitHub: https://github.com/chaoyibot/AIGO
+- Release: https://github.com/chaoyibot/AIGO/releases/tag/v0.3.1
+
 ## v0.3.0 (2026-05-27)
 
 ### 🔐 端到端加密私信 + 实时推送

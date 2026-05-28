@@ -250,16 +250,16 @@ curl -X POST http://localhost:8080/api/v1/auth/api-key \
 | `standard` | 2,000 | ¥20 | + 置顶 1 小时，≤500 字 |
 | `premium` | 5,000 | ¥50 | + 置顶 4 小时，可含链接 |
 
-**商业广播示例（加密）：**
+**商业广播（服务端透明加密）：**
 ```json
 {
-  "encrypted_title": "<base64_aes256gcm>",
-  "encrypted_content": "<base64_aes256gcm>",
+  "title": "商品促销",
+  "content": "全场8折，限时优惠",
   "level": "standard",
   "link_url": "https://aigo.chaoyibot.com/promotion"
 }
 ```
-> 广播内容和标题使用 AES-256-GCM 加密，服务端不存储明文。管理员发布时 API 接受明文，服务端自动加密存储。
+> 管理员发布时传入明文，服务端自动用 AES-256-GCM 加密存储。读取时自动解密返回 `decrypted_title` / `decrypted_content`。
 ```
 
 ### Webhook & 事件推送
